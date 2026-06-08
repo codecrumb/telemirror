@@ -150,9 +150,11 @@ class InMemoryDatabase(Database):
         Args:
             entity (`MirrorMessage`): `MirrorMessage` object
         """
-        self.__storage.setdefault(
+        entries = self.__storage.setdefault(
             self.__build_message_key(entity.original_id, entity.original_channel), []
-        ).append(entity)
+        )
+        if not any(e.mirror_channel == entity.mirror_channel for e in entries):
+            entries.append(entity)
 
     async def insert_batch(
         self: "InMemoryDatabase", entity: List[MirrorMessage]
@@ -163,9 +165,11 @@ class InMemoryDatabase(Database):
             entity (`List[MirrorMessage]`): List of `MirrorMessage` objects
         """
         for e in entity:
-            self.__storage.setdefault(
+            entries = self.__storage.setdefault(
                 self.__build_message_key(e.original_id, e.original_channel), []
-            ).append(e)
+            )
+            if not any(x.mirror_channel == e.mirror_channel for x in entries):
+                entries.append(e)
 
     async def get_messages(
         self: "InMemoryDatabase", original_id: int, original_channel: int
@@ -310,6 +314,7 @@ class PostgresDatabase(Database):
                 """
                 INSERT INTO binding_id (original_id, original_channel, mirror_id, mirror_channel)
                 VALUES (%s, %s, %s, %s)
+                ON CONFLICT (original_id, original_channel, mirror_channel) DO NOTHING
                 """,
                 (
                     entity.original_id,
@@ -332,6 +337,7 @@ class PostgresDatabase(Database):
                 """
                 INSERT INTO binding_id (original_id, original_channel, mirror_id, mirror_channel)
                 VALUES (%s, %s, %s, %s)
+                ON CONFLICT (original_id, original_channel, mirror_channel) DO NOTHING
                 """,
                 entity,
             )
@@ -455,8 +461,11 @@ class PostgresDatabase(Database):
                     mirror_channel bigint not null
                 );
 
-                CREATE INDEX IF NOT EXISTS binding_id_original_idx 
+                CREATE INDEX IF NOT EXISTS binding_id_original_idx
                 ON binding_id (original_channel, original_id);
+
+                CREATE UNIQUE INDEX IF NOT EXISTS binding_id_dedup_idx
+                ON binding_id (original_id, original_channel, mirror_channel);
                 """
             )
 

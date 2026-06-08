@@ -428,10 +428,10 @@ class EventProcessor(CopyEventMessage):
                     deleting_message.mirror_channel, []
                 ).append(deleting_message.mirror_id)
 
-        for channel_id, message_ids in deleting_per_channel.items():
+        for channel_id, mirror_ids in deleting_per_channel.items():
             try:
                 await self._client.delete_messages(
-                    entity=channel_id, message_ids=message_ids
+                    entity=channel_id, message_ids=mirror_ids
                 )
             except Exception as e:
                 self._logger.error(
@@ -660,6 +660,7 @@ class Telemirror:
         api_device_model: str = None,
         api_system_version: str = None,
         api_app_version: str = None,
+        album_timeout: float = 1.01,
     ):
         """Telemirror
 
@@ -675,7 +676,7 @@ class Telemirror:
             api_app_version (`str`, optional): Telegram API app version. Defaults to `telethon.version.__version__`
         """
         patch_input_media_with_spoiler()
-        set_album_event_timeout(delay_sec=1.01)
+        set_album_event_timeout(delay_sec=album_timeout)
 
         # Preparation for splitting receiver and sender
         recv_client = send_client = TelegramClient(

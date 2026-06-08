@@ -92,6 +92,11 @@ API_APP_VERSION: Optional[str] = config("API_APP_VERSION", default=None)
 SESSION_STRING: str = config("SESSION_STRING")
 
 USE_MEMORY_DB: bool = config("USE_MEMORY_DB", default=False, cast=bool)
+# max messages tracked in memory for reply threading and edit/delete (InMemoryDatabase only)
+MEMORY_DB_MAX_CAPACITY: int = config("MEMORY_DB_MAX_CAPACITY", default=500, cast=int)
+
+# seconds to wait for all parts of a media album to arrive before forwarding
+ALBUM_TIMEOUT: float = config("ALBUM_TIMEOUT", default=1.01, cast=float)
 
 # postgres credentials
 # connection string

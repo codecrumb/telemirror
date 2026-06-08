@@ -47,6 +47,7 @@ def configure_logging(logger_name: str, log_level: str) -> logging.Logger:
 async def run_telemirror(
     use_memory_db: bool,
     db_uri: str,
+    memory_db_max_capacity: int,
     api_id: str,
     api_hash: str,
     api_device_model: str,
@@ -57,11 +58,12 @@ async def run_telemirror(
     logger: logging.Logger,
     host: str,
     port: int,
+    album_timeout: float,
 ):
     await serve_health_endpoint(host=host, port=port)
 
     if use_memory_db:
-        database = InMemoryDatabase()
+        database = InMemoryDatabase(max_capacity=memory_db_max_capacity)
     else:
         database = await PostgresDatabase(connection_string=db_uri)
 
@@ -75,6 +77,7 @@ async def run_telemirror(
         api_device_model=api_device_model,
         api_system_version=api_system_version,
         api_app_version=api_app_version,
+        album_timeout=album_timeout,
     )
     await telemirror.run()
 
@@ -84,6 +87,7 @@ def main():
     import sys
 
     from config import (
+        ALBUM_TIMEOUT,
         API_APP_VERSION,
         API_DEVICE_MODEL,
         API_HASH,
@@ -93,6 +97,7 @@ def main():
         DB_URL,
         HOST,
         LOG_LEVEL,
+        MEMORY_DB_MAX_CAPACITY,
         PORT,
         SESSION_STRING,
         USE_MEMORY_DB,
@@ -111,6 +116,7 @@ def main():
         run_telemirror(
             use_memory_db=USE_MEMORY_DB,
             db_uri=DB_URL,
+            memory_db_max_capacity=MEMORY_DB_MAX_CAPACITY,
             api_id=API_ID,
             api_hash=API_HASH,
             api_device_model=API_DEVICE_MODEL,
@@ -121,6 +127,7 @@ def main():
             logger=configure_logging("telemirror", LOG_LEVEL),
             host=HOST,
             port=PORT,
+            album_timeout=ALBUM_TIMEOUT,
         )
     )
 
