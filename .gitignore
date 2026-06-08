@@ -88,3 +88,6 @@ ENV/
 *.session
 
 .vscode
+
+# macOS
+.DS_Store
