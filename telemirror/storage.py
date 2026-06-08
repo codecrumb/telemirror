@@ -453,7 +453,7 @@ class PostgresDatabase(Database):
         async with self.__pg_cursor() as cursor:
             await cursor.execute(
                 """
-                CREATE TABLE IF NOT EXISTS binding_id(   
+                CREATE TABLE IF NOT EXISTS binding_id(
                     id serial primary key not null,
                     original_id bigint not null,
                     original_channel bigint not null,
@@ -463,7 +463,23 @@ class PostgresDatabase(Database):
 
                 CREATE INDEX IF NOT EXISTS binding_id_original_idx
                 ON binding_id (original_channel, original_id);
-
+                """
+            )
+            # Remove any duplicate rows before creating the unique index.
+            # Keeps the earliest insert (lowest id) for each unique combination.
+            # No-op on clean databases; handles pre-existing duplicates on upgrade.
+            await cursor.execute(
+                """
+                DELETE FROM binding_id a
+                USING binding_id b
+                WHERE a.id > b.id
+                  AND a.original_id = b.original_id
+                  AND a.original_channel = b.original_channel
+                  AND a.mirror_channel = b.mirror_channel;
+                """
+            )
+            await cursor.execute(
+                """
                 CREATE UNIQUE INDEX IF NOT EXISTS binding_id_dedup_idx
                 ON binding_id (original_id, original_channel, mirror_channel);
                 """
