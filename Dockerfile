@@ -16,7 +16,7 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 COPY --chown=apprunner: . /app
 
-ENV PYTHONPATH="${PYTHONPATH}:/app/dependencies"
+ENV PYTHONPATH="/app/dependencies"
 
 ARG PORT=8000
 EXPOSE ${PORT}
