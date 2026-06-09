@@ -3,6 +3,7 @@ import logging
 from typing import Dict, List, Union
 
 from telethon import TelegramClient, errors, events, utils
+from telethon.network import ConnectionTcpAbridged
 from telethon.sessions import StringSession
 from telethon.tl import types
 
@@ -86,6 +87,7 @@ class EventProcessor(CopyEventMessage):
         if isinstance(message.media, types.MessageMediaPoll):
             message.media.poll.quiz = None
 
+        send_tasks = []
         for outgoing_chat, configs in outgoing_chats.items():
             for config in configs:
                 if config.from_topic_id is not None:
@@ -134,50 +136,57 @@ class EventProcessor(CopyEventMessage):
                     )
                     continue
 
-                outgoing_topic_reply = (
-                    reply_to_messages.get(outgoing_chat) is not None
-                    and config.to_topic_id is not None
+                send_tasks.append((outgoing_chat, config, filtered_message))
+
+        async def _send_one(
+            outgoing_chat: int, config, filtered_message: EventMessage
+        ):
+            outgoing_topic_reply = (
+                reply_to_messages.get(outgoing_chat) is not None
+                and config.to_topic_id is not None
+            )
+
+            outgoing_message: types.Message = None
+            try:
+                outgoing_message = (
+                    await send_message(
+                        self._client,
+                        entity=outgoing_chat,
+                        message=filtered_message,
+                        formatting_entities=filtered_message.entities,
+                        reply_to=reply_to_messages.get(outgoing_chat)
+                        if outgoing_topic_reply or config.to_topic_id is None
+                        else config.to_topic_id,
+                        reply_to_topic_id=config.to_topic_id
+                        if outgoing_topic_reply
+                        else None,
+                    )
+                    if config.mode == "copy"
+                    else await forward_messages(
+                        self._client,
+                        entity=outgoing_chat,
+                        messages=message,
+                        reply_to_topic_id=config.to_topic_id,
+                    )
+                )
+            except Exception as e:
+                self._logger.error(
+                    f"Error while sending message to chat#{outgoing_chat}. "
+                    f"{type(e).__name__}: {e}"
+                )
+                return
+
+            if outgoing_message:
+                await self._database.insert(
+                    MirrorMessage(
+                        original_id=filtered_message.id,
+                        original_channel=chat_id,
+                        mirror_id=outgoing_message.id,
+                        mirror_channel=outgoing_chat,
+                    )
                 )
 
-                outgoing_message: types.Message = None
-                try:
-                    outgoing_message = (
-                        await send_message(
-                            self._client,
-                            entity=outgoing_chat,
-                            message=filtered_message,
-                            formatting_entities=filtered_message.entities,
-                            reply_to=reply_to_messages.get(outgoing_chat)
-                            if outgoing_topic_reply or config.to_topic_id is None
-                            else config.to_topic_id,
-                            reply_to_topic_id=config.to_topic_id
-                            if outgoing_topic_reply
-                            else None,
-                        )
-                        if config.mode == "copy"
-                        else await forward_messages(
-                            self._client,
-                            entity=outgoing_chat,
-                            messages=message,
-                            reply_to_topic_id=config.to_topic_id,
-                        )
-                    )
-                except Exception as e:
-                    self._logger.error(
-                        f"Error while sending message to chat#{outgoing_chat}. "
-                        f"{type(e).__name__}: {e}"
-                    )
-                    continue
-
-                if outgoing_message:
-                    await self._database.insert(
-                        MirrorMessage(
-                            original_id=filtered_message.id,
-                            original_channel=chat_id,
-                            mirror_id=outgoing_message.id,
-                            mirror_channel=outgoing_chat,
-                        )
-                    )
+        await asyncio.gather(*[_send_one(oc, cfg, fm) for oc, cfg, fm in send_tasks])
 
     @__handle_exceptions
     async def new_album(
@@ -206,6 +215,7 @@ class EventProcessor(CopyEventMessage):
             else {}
         )
 
+        send_tasks = []
         for outgoing_chat, configs in outgoing_chats.items():
             for config in configs:
                 if config.from_topic_id is not None:
@@ -264,56 +274,65 @@ class EventProcessor(CopyEventMessage):
                     # Pass unparsed text, since: https://github.com/LonamiWebs/Telethon/issues/3065
                     captions.append(incoming_message.text)
 
-                outgoing_topic_reply = (
-                    reply_to_messages.get(outgoing_chat) is not None
-                    and config.to_topic_id is not None
+                send_tasks.append((outgoing_chat, config, idxs, files, captions))
+
+        async def _send_album_one(
+            outgoing_chat: int, config, idxs: List[int], files, captions: List[str]
+        ):
+            outgoing_topic_reply = (
+                reply_to_messages.get(outgoing_chat) is not None
+                and config.to_topic_id is not None
+            )
+
+            outgoing_messages: List[types.Message] = None
+            try:
+                outgoing_messages = (
+                    await send_file(
+                        self._client,
+                        entity=outgoing_chat,
+                        caption=captions,
+                        file=files,
+                        reply_to=reply_to_messages.get(outgoing_chat)
+                        if outgoing_topic_reply or config.to_topic_id is None
+                        else config.to_topic_id,
+                        reply_to_topic_id=config.to_topic_id
+                        if outgoing_topic_reply
+                        else None,
+                    )
+                    if config.mode == "copy"
+                    else await forward_messages(
+                        self._client,
+                        entity=outgoing_chat,
+                        messages=album,
+                        reply_to_topic_id=config.to_topic_id,
+                    )
+                )
+            except Exception as e:
+                self._logger.error(
+                    f"Error while sending album to chat#{outgoing_chat}. "
+                    f"{type(e).__name__}: {e}"
+                )
+                return
+
+            # Expect non-empty list of messages
+            if utils.is_list_like(outgoing_messages):
+                await self._database.insert_batch(
+                    [
+                        MirrorMessage(
+                            original_id=idxs[message_index],
+                            original_channel=chat_id,
+                            mirror_id=outgoing_message.id,
+                            mirror_channel=outgoing_chat,
+                        )
+                        for message_index, outgoing_message in enumerate(
+                            outgoing_messages
+                        )
+                    ]
                 )
 
-                outgoing_messages: List[types.Message] = None
-                try:
-                    outgoing_messages = (
-                        await send_file(
-                            self._client,
-                            entity=outgoing_chat,
-                            caption=captions,
-                            file=files,
-                            reply_to=reply_to_messages.get(outgoing_chat)
-                            if outgoing_topic_reply or config.to_topic_id is None
-                            else config.to_topic_id,
-                            reply_to_topic_id=config.to_topic_id
-                            if outgoing_topic_reply
-                            else None,
-                        )
-                        if config.mode == "copy"
-                        else await forward_messages(
-                            self._client,
-                            entity=outgoing_chat,
-                            messages=album,
-                            reply_to_topic_id=config.to_topic_id,
-                        )
-                    )
-                except Exception as e:
-                    self._logger.error(
-                        f"Error while sending album to chat#{outgoing_chat}. "
-                        f"{type(e).__name__}: {e}"
-                    )
-                    continue
-
-                # Expect non-empty list of messages
-                if utils.is_list_like(outgoing_messages):
-                    await self._database.insert_batch(
-                        [
-                            MirrorMessage(
-                                original_id=idxs[message_index],
-                                original_channel=chat_id,
-                                mirror_id=outgoing_message.id,
-                                mirror_channel=outgoing_chat,
-                            )
-                            for message_index, outgoing_message in enumerate(
-                                outgoing_messages
-                            )
-                        ]
-                    )
+        await asyncio.gather(
+            *[_send_album_one(oc, cfg, idx, fi, cap) for oc, cfg, idx, fi, cap in send_tasks]
+        )
 
     @__handle_exceptions
     async def edit_message(
@@ -328,6 +347,7 @@ class EventProcessor(CopyEventMessage):
 
         self._logger.info(f"[Edit message]: {message_link}")
 
+        edit_tasks = []
         for outgoing_message in outgoing_messages:
             configs = self._chat_mapping.get(chat_id, {}).get(
                 outgoing_message.mirror_channel
@@ -354,40 +374,44 @@ class EventProcessor(CopyEventMessage):
                     )
                     continue
 
-                # Prevent `MediaPrevInvalidError`: The old media cannot be edited
-                # with anything else (such as stickers or voice notes).
-                edit_media_allowed = (
-                    not isinstance(filtered_message.media, types.MessageMediaDocument)
-                    or not isinstance(filtered_message.media.document, types.Document)
-                    or not any(
-                        isinstance(attr, types.DocumentAttributeAudio)
-                        and attr.voice is True
-                        for attr in filtered_message.media.document.attributes
-                    )
-                )
-                try:
-                    await self._client.edit_message(
-                        entity=outgoing_message.mirror_channel,
-                        message=outgoing_message.mirror_id,
-                        text=filtered_message.message,
-                        formatting_entities=filtered_message.entities,
-                        file=filtered_message.media if edit_media_allowed else None,
-                        link_preview=isinstance(
-                            filtered_message.media, types.MessageMediaWebPage
-                        ),
-                    )
-                except errors.MessageNotModifiedError:
-                    self._logger.warning(
-                        f"Suppressed MessageNotModifiedError for message "
-                        f"{outgoing_message.mirror_channel}#{outgoing_message.mirror_id}"
-                    )
+                edit_tasks.append((outgoing_message, filtered_message))
 
-                except Exception as e:
-                    self._logger.error(
-                        f"Error while editing message "
-                        f"{outgoing_message.mirror_channel}#{outgoing_message.mirror_id}. "
-                        f"{type(e).__name__}: {e}"
-                    )
+        async def _edit_one(outgoing_message: MirrorMessage, filtered_message: EventMessage):
+            # Prevent `MediaPrevInvalidError`: The old media cannot be edited
+            # with anything else (such as stickers or voice notes).
+            edit_media_allowed = (
+                not isinstance(filtered_message.media, types.MessageMediaDocument)
+                or not isinstance(filtered_message.media.document, types.Document)
+                or not any(
+                    isinstance(attr, types.DocumentAttributeAudio)
+                    and attr.voice is True
+                    for attr in filtered_message.media.document.attributes
+                )
+            )
+            try:
+                await self._client.edit_message(
+                    entity=outgoing_message.mirror_channel,
+                    message=outgoing_message.mirror_id,
+                    text=filtered_message.message,
+                    formatting_entities=filtered_message.entities,
+                    file=filtered_message.media if edit_media_allowed else None,
+                    link_preview=isinstance(
+                        filtered_message.media, types.MessageMediaWebPage
+                    ),
+                )
+            except errors.MessageNotModifiedError:
+                self._logger.warning(
+                    f"Suppressed MessageNotModifiedError for message "
+                    f"{outgoing_message.mirror_channel}#{outgoing_message.mirror_id}"
+                )
+            except Exception as e:
+                self._logger.error(
+                    f"Error while editing message "
+                    f"{outgoing_message.mirror_channel}#{outgoing_message.mirror_id}. "
+                    f"{type(e).__name__}: {e}"
+                )
+
+        await asyncio.gather(*[_edit_one(om, fm) for om, fm in edit_tasks])
 
     @__handle_exceptions
     async def delete_message(
@@ -428,7 +452,7 @@ class EventProcessor(CopyEventMessage):
                     deleting_message.mirror_channel, []
                 ).append(deleting_message.mirror_id)
 
-        for channel_id, mirror_ids in deleting_per_channel.items():
+        async def _delete_channel(channel_id: int, mirror_ids: List[int]):
             try:
                 await self._client.delete_messages(
                     entity=channel_id, message_ids=mirror_ids
@@ -438,6 +462,10 @@ class EventProcessor(CopyEventMessage):
                     f"Error while deleting messages from chat#{channel_id}. "
                     f"{type(e).__name__}: {e}"
                 )
+
+        await asyncio.gather(
+            *[_delete_channel(cid, mids) for cid, mids in deleting_per_channel.items()]
+        )
 
         await self._database.delete_messages_batch(message_ids, chat_id)
 
@@ -683,6 +711,7 @@ class Telemirror:
             StringSession(session_string),
             api_id,
             api_hash,
+            connection=ConnectionTcpAbridged,
             device_model=api_device_model,
             system_version=api_system_version,
             app_version=api_app_version,
