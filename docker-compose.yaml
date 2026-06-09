@@ -1,20 +1,24 @@
+# Update and restart: git pull origin master && docker compose up -d --build
 services:
   postgres:
-    image: postgres:15
+    image: postgres:16-alpine
+    container_name: telemirror-db
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${DB_NAME}
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASS}
-    env_file:
-      - .env
     volumes:
-      - database:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-  
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   telemirror:
     build: .
+    container_name: telemirror
     restart: unless-stopped
     deploy:
       resources:
@@ -26,11 +30,10 @@ services:
     env_file:
       - .env
     volumes:
-      - ./.configs:/app/.configs:ro
-    ports:
-      - "8000:8000"
+      - ./.configs/mirror.config.yml:/app/.configs/mirror.config.yml
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
 
 volumes:
-  database:
+  postgres_data:
