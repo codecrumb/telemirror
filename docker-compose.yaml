@@ -17,6 +17,11 @@ services:
   telemirror:
     build: .
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
     environment:
       DATABASE_URL: "postgres://${DB_USER}:${DB_PASS}@postgres/${DB_NAME}"
     env_file:

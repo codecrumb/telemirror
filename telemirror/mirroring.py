@@ -638,7 +638,7 @@ class Mirroring:
                     connection_task = asyncio.create_task(client.connect())
 
                     while not connection_task.done() and not client.is_connected():
-                        await asyncio.sleep(0)
+                        await asyncio.sleep(0.05)
 
                     await asyncio.wait_for(connection_task, timeout=client._timeout)
                 except asyncio.TimeoutError as e:
