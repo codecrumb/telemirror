@@ -13,7 +13,7 @@ async def serve_health_endpoint(host: str, port: int) -> None:
     from aiohttp import web
 
     async def health(_):
-        return web.Response(status=204)
+        return web.Response(text="ok")
 
     app = web.Application()
     app.add_routes([web.get("/", health)])
