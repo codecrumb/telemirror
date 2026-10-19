@@ -4,7 +4,7 @@ Loads environment(.env)/config.yaml config
 
 import os
 from dataclasses import dataclass
-from typing import Dict, List, Literal, Optional
+from typing import Dict, List, Literal, Optional, Union
 
 from decouple import AutoConfig, Csv, RepositoryEnv
 
@@ -132,8 +132,27 @@ PORT: int = config("PORT", default=8000, cast=int)
 YAML_CONFIG_ENV: Optional[str] = config("YAML_CONFIG_ENV", default=None)
 YAML_CONFIG_FILE = "./.configs/mirror.config.yml"
 
+
+def parse_chat(value) -> tuple:
+    """Parse a chat reference: `-100123`, `-100123#4` (topic), `@name`, `name#4`
+
+    Returns:
+        `(chat, topic_id)` where chat is an `int` ID or a username `str`
+        (resolved to an ID at startup)
+    """
+    if isinstance(value, int):
+        return value, None
+    import re
+
+    chat, _, topic = str(value).strip().partition("#")
+    chat = re.sub(r"^(?:https?://)?(?:t\.me/)?@?", "", chat.strip())
+    return (int(chat) if re.fullmatch(r"-?\d+", chat) else chat), (
+        int(topic) if topic else None
+    )
+
+
 # source and target chats mapping
-CHAT_MAPPING: Dict[int, Dict[int, List["DirectionConfig"]]] = {}
+CHAT_MAPPING: Dict[Union[int, str], Dict[Union[int, str], List["DirectionConfig"]]] = {}
 
 
 @dataclass(frozen=True)
@@ -201,20 +220,10 @@ if YAML_CONFIG_ENV or os.path.exists(YAML_CONFIG_FILE):
         targets: list = direction["to"]
 
         for source in sources:
-            source_topic_id = None
-            if isinstance(source, str):
-                if "#" in source:
-                    source, source_topic_id = map(int, source.split("#"))
-                else:
-                    source = int(source)
+            source, source_topic_id = parse_chat(source)
 
             for target in targets:
-                target_topic_id = None
-                if isinstance(target, str):
-                    if "#" in target:
-                        target, target_topic_id = map(int, target.split("#"))
-                    else:
-                        target = int(target)
+                target, target_topic_id = parse_chat(target)
 
                 CHAT_MAPPING.setdefault(source, {}).setdefault(target, []).append(
                     DirectionConfig(
@@ -248,25 +257,17 @@ else:
         import re
 
         matches = re.findall(
-            r"\[?((?:-?\d+(?:#\d+)?,?)+):((?:-?\d+(?:#\d+)?,?)+)\]?",
+            r"\[?((?:(?:-?\d+|@?[A-Za-z]\w*)(?:#\d+)?,?)+):((?:(?:-?\d+|@?[A-Za-z]\w*)(?:#\d+)?,?)+)\]?",
             env_str,
             re.MULTILINE,
         )
 
         for sources, targets in matches:
             for source in sources.split(","):
-                source_topic_id = None
-                if "#" in source:
-                    source, source_topic_id = map(int, source.split("#"))
-                else:
-                    source = int(source)
+                source, source_topic_id = parse_chat(source)
 
                 for target in targets.split(","):
-                    target_topic_id = None
-                    if "#" in target:
-                        target, target_topic_id = map(int, target.split("#"))
-                    else:
-                        target = int(target)
+                    target, target_topic_id = parse_chat(target)
 
                     mapping.setdefault(source, {}).setdefault(target, []).append(
                         DirectionConfig(

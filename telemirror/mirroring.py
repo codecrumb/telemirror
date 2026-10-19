@@ -512,16 +512,20 @@ class EventHandlers:
     def __init__(
         self: "EventHandlers",
         client: TelegramClient,
-        chats: List[int],
         processor: EventProcessor,
     ) -> None:
         """Message event handler
 
         Args:
             client (`TelegramClient`): Message receiver client
-            chats (`List[int]`): List of chats to be observed
             processor (`EventProcessor`): Event processor
         """
+        self._client = client
+        self._processor = processor
+
+    def register(self: "EventHandlers", chats: List[int]) -> None:
+        """Start observing **chats** (resolved chat IDs)"""
+        client = self._client
         client.add_event_handler(self.on_new_message, events.NewMessage(chats=chats))
         client.add_event_handler(self.on_album, events.Album(chats=chats))
         client.add_event_handler(
@@ -530,7 +534,6 @@ class EventHandlers:
         client.add_event_handler(
             self.on_deleted_message, events.MessageDeleted(chats=chats)
         )
-        self._processor = processor
 
     def event_message_link(self: "EventHandlers", event: EventLike) -> str:
         """Get link to event message"""
@@ -635,7 +638,6 @@ class Mirroring:
 
         self._handlers = EventHandlers(
             client=receiver,
-            chats=list(chat_mapping.keys()),
             processor=EventProcessor(
                 chat_mapping=chat_mapping,
                 database=database,
@@ -665,6 +667,36 @@ class Mirroring:
 
         return f"Mirror mapping: \n{mirror_mapping}\nUsing database: {self._database}\n"
 
+    async def __resolve_usernames(self: "Mirroring", client: TelegramClient) -> None:
+        """Replace usernames in the chat mapping with chat IDs (in place)"""
+        cache: Dict[str, int] = {}
+
+        async def to_id(chat: Union[int, str]) -> int:
+            if isinstance(chat, int):
+                return chat
+            if chat not in cache:
+                try:
+                    cache[chat] = utils.get_peer_id(await client.get_input_entity(chat))
+                except Exception as e:
+                    raise RuntimeError(
+                        f"Cannot resolve chat '{chat}' from the config "
+                        f"({type(e).__name__}: {e}). Check the username, "
+                        f"or use the numeric chat ID."
+                    ) from e
+                self._logger.info(f"Resolved '{chat}' -> {cache[chat]}")
+            return cache[chat]
+
+        resolved: Dict[int, Dict[int, List[DirectionConfig]]] = {}
+        for source, targets in self._chat_mapping.items():
+            source_id = await to_id(source)
+            for target, configs in targets.items():
+                resolved.setdefault(source_id, {}).setdefault(
+                    await to_id(target), []
+                ).extend(configs)
+
+        self._chat_mapping.clear()
+        self._chat_mapping.update(resolved)
+
     async def __connect_client(self: "Mirroring", client: TelegramClient) -> None:
         try:
             if not client.is_connected():
@@ -693,6 +725,9 @@ class Mirroring:
                 )
 
             self._logger.info(f"Logged in as {utils.get_display_name(me)} ({me.phone})")
+
+            await self.__resolve_usernames(client)
+            self._handlers.register(list(self._chat_mapping.keys()))
 
             await client.run_until_disconnected()
         except (errors.UserDeactivatedBanError, errors.UserDeactivatedError):

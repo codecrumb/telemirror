@@ -103,7 +103,9 @@
     # mirrored message, and the source isn't `noforwards`; otherwise it copies.
     mode: copy
 
-    # (Required) Mirror directions
+    # (Required) Mirror directions.
+    # Chats can be numeric IDs or usernames (quote them in YAML: "@channel", "@channel#4").
+    # Usernames are resolved to IDs once at startup; if a username is changed later, update it here.
     directions:
       - from: [-1001, -1002, -1003]
         to: [-100203]
