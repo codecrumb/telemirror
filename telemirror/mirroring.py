@@ -57,6 +57,18 @@ class EventProcessor(CopyEventMessage):
 
         return wrapper
 
+    @staticmethod
+    def _is_unmodified(original: EventMessage, filtered: EventMessage) -> bool:
+        """Whether filters left the text, entities and media untouched"""
+        def raw(m: EventMessage):
+            return (
+                m.message,
+                [bytes(e) for e in m.entities or []],
+                bytes(m.media) if m.media else None,
+            )
+
+        return raw(original) == raw(filtered)
+
     @__handle_exceptions
     async def new_message(
         self: "EventProcessor", chat_id: int, message: EventMessage, message_link: str
@@ -146,29 +158,56 @@ class EventProcessor(CopyEventMessage):
                 and config.to_topic_id is not None
             )
 
+            reply_to_id = reply_to_messages.get(outgoing_chat)
+
+            async def _copy() -> types.Message:
+                return await send_message(
+                    self._client,
+                    entity=outgoing_chat,
+                    message=filtered_message,
+                    formatting_entities=filtered_message.entities,
+                    reply_to=reply_to_id
+                    if outgoing_topic_reply or config.to_topic_id is None
+                    else config.to_topic_id,
+                    reply_to_topic_id=config.to_topic_id
+                    if outgoing_topic_reply
+                    else None,
+                )
+
             outgoing_message: types.Message = None
             try:
-                outgoing_message = (
-                    await send_message(
-                        self._client,
-                        entity=outgoing_chat,
-                        message=filtered_message,
-                        formatting_entities=filtered_message.entities,
-                        reply_to=reply_to_messages.get(outgoing_chat)
-                        if outgoing_topic_reply or config.to_topic_id is None
-                        else config.to_topic_id,
-                        reply_to_topic_id=config.to_topic_id
-                        if outgoing_topic_reply
-                        else None,
-                    )
-                    if config.mode == "copy"
-                    else await forward_messages(
+                if config.mode == "forward":
+                    outgoing_message = await forward_messages(
                         self._client,
                         entity=outgoing_chat,
                         messages=message,
                         reply_to_topic_id=config.to_topic_id,
                     )
-                )
+                elif (
+                    config.mode == "fast_copy"
+                    and not restricted_saving_content
+                    and not getattr(message, "noforwards", False)
+                    and reply_to_id is None
+                    and self._is_unmodified(message, filtered_message)
+                ):
+                    # Server-side copy without the author header. Falls back
+                    # to a regular copy if Telegram rejects the forward.
+                    try:
+                        outgoing_message = await forward_messages(
+                            self._client,
+                            entity=outgoing_chat,
+                            messages=message,
+                            reply_to_topic_id=config.to_topic_id,
+                            drop_author=True,
+                        )
+                    except Exception as e:
+                        self._logger.warning(
+                            f"Anonymous forward to chat#{outgoing_chat} failed, "
+                            f"falling back to copy. {type(e).__name__}: {e}"
+                        )
+                        outgoing_message = await _copy()
+                else:
+                    outgoing_message = await _copy()
             except Exception as e:
                 self._logger.error(
                     f"Error while sending message to chat#{outgoing_chat}. "

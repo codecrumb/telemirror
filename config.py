@@ -143,7 +143,7 @@ class DirectionConfig:
     filters: MessageFilter
     from_topic_id: Optional[int] = None
     to_topic_id: Optional[int] = None
-    mode: Literal["copy", "forward"] = "copy"
+    mode: Literal["copy", "forward", "fast_copy"] = "copy"
 
     def __repr__(self) -> str:
         return (

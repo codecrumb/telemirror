@@ -98,7 +98,10 @@
     # (Optional) Global settings
     disable_edit: true
     disable_delete: true
-    mode: copy # or forward
+    # copy | forward | fast_copy. `fast_copy` forwards without the author name (server-side,
+    # no rebuild) when the filters leave the message unchanged, is not a reply to a
+    # mirrored message, and the source isn't `noforwards`; otherwise it copies.
+    mode: copy
 
     # (Required) Mirror directions
     directions:

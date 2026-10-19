@@ -13,7 +13,7 @@ filters:
 # (Optional) Global settings
 disable_edit: true
 disable_delete: true
-mode: copy # or forward
+mode: copy # or forward, or fast_copy (anonymous server-side forward when filters leave the message unchanged; otherwise copies)
 
 # (Required) Mirror directions
 directions:
