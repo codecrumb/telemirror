@@ -614,6 +614,8 @@ class EventHandlers:
 
 
 class Mirroring:
+    RESOLVE_CONCURRENCY = 5
+
     def __init__(
         self: "Mirroring",
         chat_mapping: Dict[int, Dict[int, List[DirectionConfig]]],
@@ -670,11 +672,11 @@ class Mirroring:
     async def __resolve_usernames(self: "Mirroring", client: TelegramClient) -> None:
         """Replace usernames in the chat mapping with chat IDs (in place)"""
         cache: Dict[str, int] = {}
+        # Bounded so a large config doesn't trigger Telegram flood waits
+        limit = asyncio.Semaphore(self.RESOLVE_CONCURRENCY)
 
-        async def to_id(chat: Union[int, str]) -> int:
-            if isinstance(chat, int):
-                return chat
-            if chat not in cache:
+        async def resolve(chat: str) -> None:
+            async with limit:
                 try:
                     cache[chat] = utils.get_peer_id(await client.get_input_entity(chat))
                 except Exception as e:
@@ -683,15 +685,24 @@ class Mirroring:
                         f"({type(e).__name__}: {e}). Check the username, "
                         f"or use the numeric chat ID."
                     ) from e
-                self._logger.info(f"Resolved '{chat}' -> {cache[chat]}")
-            return cache[chat]
+            self._logger.info(f"Resolved '{chat}' -> {cache[chat]}")
+
+        usernames = {
+            chat
+            for source, targets in self._chat_mapping.items()
+            for chat in (source, *targets)
+            if isinstance(chat, str)
+        }
+        await asyncio.gather(*(resolve(chat) for chat in usernames))
+
+        def to_id(chat: Union[int, str]) -> int:
+            return chat if isinstance(chat, int) else cache[chat]
 
         resolved: Dict[int, Dict[int, List[DirectionConfig]]] = {}
         for source, targets in self._chat_mapping.items():
-            source_id = await to_id(source)
             for target, configs in targets.items():
-                resolved.setdefault(source_id, {}).setdefault(
-                    await to_id(target), []
+                resolved.setdefault(to_id(source), {}).setdefault(
+                    to_id(target), []
                 ).extend(configs)
 
         self._chat_mapping.clear()
