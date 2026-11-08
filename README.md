@@ -151,6 +151,9 @@
     # [id1, id2, id3:id4];[id5:id6] semicolon means AND
     CHAT_MAPPING=[-100999999,-100999999,-100999999:-1009999999];
     
+    # (Optional) URL of a remote YAML config, e.g. a GitHub Gist (see "Remote config" below). Takes priority over every other config source
+    REMOTE_CONFIG_URL=
+
     # (Optional) YAML filter configuration thru single-lined env string (new lines (\n) should be replaced to \\n), other filter settings from env will be ignored
     YAML_CONFIG_ENV=
     
@@ -170,11 +173,26 @@
 
     **Channel mirroring config priority**:
 
+    - `REMOTE_CONFIG_URL` from `.env` (if set and reachable, or a cached copy of it exists)
+
     - `YAML_CONFIG_ENV` from `.env`
 
     - from `./.configs/mirror.config.yml` file
 
     - `CHAT_MAPPING, REMOVE_URLS, REMOVE_URLS_LIST, REMOVE_URLS_WL, DISABLE_DELETE, DISABLE_EDIT` from `.env` file
+
+    <details>
+    <summary><b>Remote config</b> (optional, e.g. GitHub Gist)</summary>
+
+    Set `REMOTE_CONFIG_URL` to load the YAML config (same format as `mirror.config.yml`) from a URL instead of the local file. Without it nothing changes.
+
+    - A regular Gist link (`https://gist.github.com/<user>/<id>`) is converted to its raw URL automatically; any other URL is used as is. The raw URL without a revision hash always serves the latest version. A multi-file Gist serves its first file, so paste the raw link of the file you want.
+    - Workflow: edit the Gist, then restart the container (`docker compose restart telemirror`).
+    - Fetch uses a 10s timeout and 3 attempts. On success the config is saved to `REMOTE_CONFIG_CACHE_FILE` (default `./.configs/.remote-config.cache.yml`).
+    - If the fetch fails, the cached copy of the last good config is used. If there is none, the local sources (`YAML_CONFIG_ENV`, `mirror.config.yml`, `.env`) are used. Each fallback is logged.
+    - The cache lives inside the container: it survives `restart` but not a re-created container (`up --build`) unless `./.configs` is mounted as a volume.
+    - A secret Gist is unlisted, not private: don't put credentials in it.
+    </details>
 
     ❓ Channels ID can be fetched by using [Telegram bot](https://t.me/messageinformationsbot).
 

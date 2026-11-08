@@ -131,6 +131,12 @@ PORT: int = config("PORT", default=8000, cast=int)
 
 YAML_CONFIG_ENV: Optional[str] = config("YAML_CONFIG_ENV", default=None)
 YAML_CONFIG_FILE = "./.configs/mirror.config.yml"
+# (Optional) URL of a remote YAML config, e.g. a GitHub Gist. Takes priority over the local sources
+REMOTE_CONFIG_URL: Optional[str] = config("REMOTE_CONFIG_URL", default=None)
+# last successfully fetched remote config, used when the remote is unreachable
+REMOTE_CONFIG_CACHE_FILE: str = config(
+    "REMOTE_CONFIG_CACHE_FILE", default="./.configs/.remote-config.cache.yml"
+)
 
 
 def parse_chat(value) -> tuple:
@@ -177,7 +183,13 @@ class DirectionConfig:
 
 # Load mirror config from config.yml
 # otherwise from .env or environment
-if YAML_CONFIG_ENV or os.path.exists(YAML_CONFIG_FILE):
+remote_yaml_config: Optional[dict] = None
+if REMOTE_CONFIG_URL:
+    from telemirror.remote_config import load_remote_config
+
+    remote_yaml_config = load_remote_config(REMOTE_CONFIG_URL, REMOTE_CONFIG_CACHE_FILE)
+
+if remote_yaml_config or YAML_CONFIG_ENV or os.path.exists(YAML_CONFIG_FILE):
     from importlib import import_module
     from types import ModuleType
 
@@ -187,7 +199,9 @@ if YAML_CONFIG_ENV or os.path.exists(YAML_CONFIG_FILE):
 
     yaml_config: dict = None
 
-    if YAML_CONFIG_ENV:
+    if remote_yaml_config:
+        yaml_config = remote_yaml_config
+    elif YAML_CONFIG_ENV:
         yaml_config = yaml.load(
             YAML_CONFIG_ENV.replace("\\n", "\n"), Loader=yaml.FullLoader
         )

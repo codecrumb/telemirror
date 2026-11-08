@@ -32,6 +32,7 @@ docker-compose up
 | `telemirror/mirroring.py` | Core event loop: `EventHandlers` → `EventProcessor` → send/forward |
 | `telemirror/storage.py` | `MirrorMessage` NamedTuple + `InMemoryDatabase` / `PostgresDatabase` |
 | `telemirror/messagefilters/` | Filter pipeline: `EmptyMessageFilter`, `UrlMessageFilter`, `ForwardFormatFilter`, `KeywordReplaceFilter`, etc. |
+| `telemirror/remote_config.py` | Optional remote YAML config fetch with retry + cached fallback |
 | `telemirror/mixins.py` | `CopyEventMessage`, `UpdateEntitiesParams`, `ChannelName`, `MessageLink` |
 | `telemirror/_patch/` | Monkeypatches for Telethon: spoiler support, album timeout, send wrappers |
 | `.configs/mirror.config.yml` | Per-direction filter/mode config (preferred over env vars for complex setups) |
@@ -85,6 +86,10 @@ API_APP_VERSION=
 
 # Channel mapping (simple env-only setup)
 CHAT_MAPPING=[-100SOURCE:-100TARGET]
+
+# Optional remote YAML config (e.g. Gist link, auto-converted to raw). Highest priority.
+# Fallback: retry x3 -> cached last-good copy (REMOTE_CONFIG_CACHE_FILE) -> local sources
+REMOTE_CONFIG_URL=
 
 # Or full YAML config (overrides env mapping)
 YAML_CONFIG_ENV=...   # single-lined YAML string
