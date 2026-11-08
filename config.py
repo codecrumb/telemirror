@@ -135,7 +135,8 @@ YAML_CONFIG_FILE = "./.configs/mirror.config.yml"
 REMOTE_CONFIG_URL: Optional[str] = config("REMOTE_CONFIG_URL", default=None)
 # last successfully fetched remote config, used when the remote is unreachable
 REMOTE_CONFIG_CACHE_FILE: str = config(
-    "REMOTE_CONFIG_CACHE_FILE", default="./.configs/.remote-config.cache.yml"
+    "REMOTE_CONFIG_CACHE_FILE",
+    default=os.path.expanduser("~/.cache/telemirror/remote-config.yml"),
 )
 
 

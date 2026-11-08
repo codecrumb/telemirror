@@ -17,6 +17,10 @@ import yaml
 _GIST_PAGE = re.compile(
     r"^https?://gist\.github\.com/(?P<user>[\w.-]+)/(?P<id>[0-9a-f]+)(?:[/?#].*)?$"
 )
+_GIST_RAW_PINNED = re.compile(
+    r"^(?P<base>https?://gist\.githubusercontent\.com/[\w.-]+/[0-9a-f]+/raw)"
+    r"/[0-9a-f]{40}/(?P<file>[^/?#]+)$"
+)
 
 
 def _log(message: str) -> None:
@@ -27,13 +31,18 @@ def _log(message: str) -> None:
 def to_raw_url(url: str) -> str:
     """Turn a regular Gist page link into its raw URL; any other URL is returned as is.
 
-    The raw URL without a revision hash always serves the latest version. For a
-    multi-file Gist it serves the first file, so pass a raw link to pick another file.
+    The raw URL without a revision hash always serves the latest version, so a pinned
+    one (`.../raw/<commit sha>/<file>`) has its hash removed. For a multi-file Gist the
+    hash-less page link serves the first file, so pass a raw link to pick another file.
     """
     url = url.strip()
     match = _GIST_PAGE.match(url)
     if match:
         return f"https://gist.githubusercontent.com/{match['user']}/{match['id']}/raw"
+    pinned = _GIST_RAW_PINNED.match(url)
+    if pinned:
+        _log("ignoring the revision hash in the Gist URL to always load the latest version")
+        return f"{pinned['base']}/{pinned['file']}"
     return url
 
 

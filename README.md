@@ -186,11 +186,11 @@
 
     Set `REMOTE_CONFIG_URL` to load the YAML config (same format as `mirror.config.yml`) from a URL instead of the local file. Without it nothing changes.
 
-    - A regular Gist link (`https://gist.github.com/<user>/<id>`) is converted to its raw URL automatically; any other URL is used as is. The raw URL without a revision hash always serves the latest version. A multi-file Gist serves its first file, so paste the raw link of the file you want.
+    - A regular Gist link (`https://gist.github.com/<user>/<id>`) is converted to its raw URL automatically; any other URL is used as is. The raw URL without a revision hash always serves the latest version; if your URL contains one (the Gist "Raw" button adds it), it is removed automatically. A multi-file Gist serves its first file, so paste the raw link of the file you want.
     - Workflow: edit the Gist, then restart the container (`docker compose restart telemirror`).
-    - Fetch uses a 10s timeout and 3 attempts. On success the config is saved to `REMOTE_CONFIG_CACHE_FILE` (default `./.configs/.remote-config.cache.yml`).
+    - Fetch uses a 10s timeout and 3 attempts. On success the config is saved to `REMOTE_CONFIG_CACHE_FILE` (default `~/.cache/telemirror/remote-config.yml`).
     - If the fetch fails, the cached copy of the last good config is used. If there is none, the local sources (`YAML_CONFIG_ENV`, `mirror.config.yml`, `.env`) are used. Each fallback is logged.
-    - The cache lives inside the container: it survives `restart` but not a re-created container (`up --build`) unless `./.configs` is mounted as a volume.
+    - The cache lives inside the container: it survives `restart` but not a re-created container (`up --build`) unless `REMOTE_CONFIG_CACHE_FILE` points into a mounted volume.
     - A secret Gist is unlisted, not private: don't put credentials in it.
     </details>
 
